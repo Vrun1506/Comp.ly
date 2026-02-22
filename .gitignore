@@ -28,5 +28,9 @@ firebase-debug.log
 
 # ── Secrets ──────────────────────────────────────────────────────────────────
 *.pem
+
+# ── MCP server – keep compiled dist, override the dist/ rule above ───────────
+!open-legal-compliance-mcp/dist/
+!open-legal-compliance-mcp/dist/**
 *.key
 *.cert
