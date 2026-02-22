@@ -1,0 +1,114 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function userConsultancyId() {
+      return getUserData().consultancyId;
+    }
+
+    function isOwnerOrAdmin() {
+      let role = getUserData().role;
+      return role == 'owner' || role == 'admin';
+    }
+
+    // ── Users ────────────────────────────────────────────────────────────────
+
+    match /users/{uid} {
+      // Users can only read/write their own document
+      allow read:  if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ── Consultancies ────────────────────────────────────────────────────────
+
+    match /consultancies/{consultancyId} {
+      allow read:   if isSignedIn() && userConsultancyId() == consultancyId;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && userConsultancyId() == consultancyId && isOwnerOrAdmin();
+
+      match /members/{memberId} {
+        allow read:   if isSignedIn() && userConsultancyId() == consultancyId;
+        // Allow if already a member OR if this is the creator bootstrapping ownership
+        allow write:  if isSignedIn() && (
+          userConsultancyId() == consultancyId ||
+          get(/databases/$(database)/documents/consultancies/$(consultancyId)).data.createdBy == request.auth.uid
+        ) && isOwnerOrAdmin();
+      }
+    }
+
+    // ── Workspaces ────────────────────────────────────────────────────────────
+
+    match /workspaces/{workspaceId} {
+      // Only members of the consultancy that owns the workspace can access it
+      allow read:   if isSignedIn() && resource.data.consultancyId == userConsultancyId();
+      allow create: if isSignedIn() && request.resource.data.consultancyId == userConsultancyId();
+      allow update: if isSignedIn() && resource.data.consultancyId == userConsultancyId() && isOwnerOrAdmin();
+
+      // GitHub integration – backend-managed only (deny all direct client access)
+      match /integrations/{doc} {
+        allow read:  if false; // backend only
+        allow write: if false; // backend only
+      }
+
+      // Repos
+      match /repos/{repoId} {
+        allow read:  if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+        allow write: if false; // backend only
+      }
+
+      // Scans
+      match /scans/{scanId} {
+        allow read:  if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+        allow write: if false; // backend only
+
+        // Findings
+        match /findings/{findingId} {
+          allow read:  if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+          allow write: if false;
+        }
+
+        // Plans – frontend can approve
+        match /plans/{planId} {
+          allow read:   if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+          allow update: if isSignedIn()
+            && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved', 'approvedBy', 'approvedAt']);
+          allow create: if false;
+          allow delete: if false;
+        }
+
+        // Pull Requests
+        match /pullRequests/{prId} {
+          allow read:  if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+          allow write: if false;
+        }
+
+        // Agent logs
+        match /agentLogs/{logId} {
+          allow read:  if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+          allow write: if false;
+        }
+      }
+
+      // Documents – uploaded by consultancy members directly from the frontend
+      match /documents/{docId} {
+        allow read:   if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+        allow create: if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+        allow delete: if isSignedIn() && get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.consultancyId == userConsultancyId();
+        allow update: if false;
+      }
+    }
+  }
+}

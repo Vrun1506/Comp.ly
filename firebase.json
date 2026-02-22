@@ -1,0 +1,20 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": [
+    {
+      "bucket": "comply2-a34d9.firebasestorage.app",
+      "rules": "storage.rules"
+    }
+  ],
+  "hosting": {
+    "public": "frontend/out",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}
